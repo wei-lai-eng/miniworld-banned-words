@@ -12,8 +12,8 @@
 | 去重后词条 | **5,299** |
 | 高敏感词 `score=10` | 5,231 |
 | 中敏感词 `score=5` | 68 |
-| 可疑/引导词（`suspect_word`，带通配） | 52 |
-| 白名单词 | 约 105（去重后） |
+| 可疑/引导词（`suspect_word`，带通配） | 51 |
+| 白名单词（`white_word` + `cs_white_word` 去重） | 104 |
 | 特殊数字串 | 4 |
 | 配置版本号 | 340 |
 
@@ -21,42 +21,59 @@
 
 每条主词表记录包含：
 
-- `word`：被过滤的词或正则模式
+- `word`：被过滤的词或 Lua 模式
 - `score`：敏感等级，数值越大越严格
   - `10`：高敏感，命中即拦截/替换
   - `5`：中敏感，一般用于提示或记录
-- 词中 `.` 为 Lua 模式通配符（等价于"任意字符"），例如 `黑.*科.*技` 可匹配"黑客科技""黑X科X技"等
-- `^词$` 形式表示整词精确匹配
+- 词中 `.` 为 Lua 模式通配符（等价于"任意字符"），例如 `白.*科.*技` 可匹配"白X科X技"等
+- 部分词条含 `.` 以外的字符（如 `.*`、`．`），按原始字节保留
 
 ## 文件清单
 
+主词表按每片约 800 词切成 7 个分片，每行格式 `[score] word`：
+
 | 文件 | 说明 |
 |---|---|
-| [`banned_words.json`](./banned_words.json) | **完整结构化数据**（含 meta、全部词条、分类白名单） |
-| [`banned_words_all.txt`](./banned_words_all.txt) | 全量纯文本，每行 `[score]\tword`，按敏感等级降序 |
-| [`banned_words_score10.txt`](./banned_words_score10.txt) | 仅高敏感词（5,231 条） |
-| [`banned_words_score5.txt`](./banned_words_score5.txt) | 仅中敏感词（68 条） |
-| [`suspect_words.txt`](./suspect_words.txt) | 可疑/引导性词（带通配符，52 条） |
-| [`whitelist.txt`](./whitelist.txt) | 白名单（不过滤词） |
+| [`words_index.json`](./words_index.json) | 词表元信息（版本、总数、分片数、各级计数） |
+| [`words_part_01.txt`](./words_part_01.txt) ~ [`words_part_07.txt`](./words_part_07.txt) | 主词表分片，共 5,299 条；前 6 片各 800 词，末片 499 词 |
+| [`banned_words_score5.txt`](./banned_words_score5.txt) | 仅中敏感词（68 条，独立导出便于引用） |
+| [`suspect_words.txt`](./suspect_words.txt) | 可疑/引导性词（带通配符，51 条） |
+| [`whitelist.txt`](./whitelist.txt) | 白名单（不过滤词，104 条） |
+
+> 由于完整 JSON（约 300 KB）超过单次 API 推送限制，主词表以纯文本分片形式发布。需要合并时执行：
+> ```bash
+> cat words_part_*.txt > banned_words_all.txt
+> ```
 
 ## 快速使用
 
-### JSON
-
-```python
-import json
-data = json.load(open('banned_words.json', encoding='utf-8'))
-print(data['meta'])           # 元信息
-print(len(data['words']))     # 5299
-for w in data['words'][:5]:
-    print(w['score'], w['word'])
-```
-
-### 纯文本
+### 加载全部词表
 
 ```bash
-# 加载高敏感词到集合
-grep -v '^#' banned_words_score10.txt | grep -v '^$' > blocklist.txt
+# 合并分片（去掉注释行）
+grep -h -v '^#' words_part_*.txt | grep -v '^$' > all.txt
+wc -l all.txt   # 应为 5299
+```
+
+```python
+# 解析为 (score, word) 列表
+words = []
+for line in open('all.txt', encoding='utf-8'):
+    line = line.rstrip('\n')
+    if not line or line.startswith('#'):
+        continue
+    score_s, _, w = line.partition('] ')
+    score = int(score_s[1:])
+    words.append((score, w))
+print(len(words))          # 5299
+print(words[:3])
+```
+
+### 仅高敏感词
+
+```bash
+grep '^\[10\]' words_part_*.txt > score10.txt
+wc -l score10.txt   # 5231
 ```
 
 ### 注意：通配符转换
@@ -75,7 +92,7 @@ def lua_pattern_to_regex(p: str) -> str:
 - 从游戏安装目录的内容过滤模块配置中提取（Lua table 格式）
 - 解析后按 `word` 去重，同词保留最高 `score`
 - 按敏感等级分组、排序
-- 未对词条内容做任何增删改，仅做格式转换
+- 未对词条内容做任何增删改，仅做格式转换与分片
 
 ## 免责声明
 
