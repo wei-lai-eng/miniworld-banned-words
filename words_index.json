@@ -1,0 +1,9 @@
+{
+  "version": 340,
+  "total_unique": 5299,
+  "chunks": 7,
+  "chunk_size": 800,
+  "format": "words_part_N.txt 每行一个词，按 score 降序；前 N 个为 score=10，其余为 score=5",
+  "score_10_count": 5231,
+  "score_5_count": 68
+}
